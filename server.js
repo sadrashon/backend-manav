@@ -5,7 +5,19 @@ const path = require('path');
 const multer = require('multer');
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
+
+// ===== تنظیمات CORS برای دسترسی از همه جا =====
+app.use(cors({
+  origin: '*', // اجازه دسترسی از همه دستگاه‌ها و آدرس‌ها
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// ===== Middleware =====
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ===== تنظیمات آپلود عکس =====
 const storage = multer.diskStorage({
@@ -37,12 +49,6 @@ const upload = multer({
   fileFilter: fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB
 });
-
-// ===== Middleware =====
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ===== مسیر فایل دیتابیس =====
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
@@ -96,34 +102,6 @@ const readDB = () => {
           stock: 75,
           shopName: 'فروشگاه سارا',
           rating: 3.5
-        },
-        { 
-          id: 4, 
-          name: 'انگور', 
-          price: 45000, 
-          discountPrice: null,
-          image: '🍇',
-          imagePath: null,
-          unit: 'کیلو', 
-          category: 'میوه',
-          isSeasonal: false,
-          stock: 30,
-          shopName: 'فروشگاه رضایی',
-          rating: 4.8
-        },
-        { 
-          id: 5, 
-          name: 'توت فرنگی', 
-          price: 55000, 
-          discountPrice: 45000,
-          image: '🍓',
-          imagePath: null,
-          unit: 'بسته', 
-          category: 'میوه',
-          isSeasonal: true,
-          stock: 20,
-          shopName: 'فروشگاه سارا',
-          rating: 4.2
         }
       ],
       orders: [],
@@ -152,7 +130,7 @@ app.get('/api/products', (req, res) => {
     const db = readDB();
     const products = db.products.map(p => ({
       ...p,
-      imageUrl: p.imagePath ? `http://localhost:${PORT}${p.imagePath}` : null
+      imageUrl: p.imagePath ? `https://${req.get('host')}${p.imagePath}` : null
     }));
     res.json(products);
   } catch (error) {
@@ -171,7 +149,7 @@ app.get('/api/products/:id', (req, res) => {
     }
     res.json({
       ...product,
-      imageUrl: product.imagePath ? `http://localhost:${PORT}${product.imagePath}` : null
+      imageUrl: product.imagePath ? `https://${req.get('host')}${product.imagePath}` : null
     });
   } catch (error) {
     console.error('Error in GET /api/products/:id:', error);
@@ -191,8 +169,6 @@ app.post('/api/products', upload.single('imageFile'), (req, res) => {
       productData = {};
     }
     
-    console.log('📦 دریافت داده از داشبورد:', productData);
-    
     const newProduct = {
       id: Date.now(),
       name: productData.name || '',
@@ -208,13 +184,11 @@ app.post('/api/products', upload.single('imageFile'), (req, res) => {
       rating: productData.rating || 0
     };
     
-    console.log('✅ محصول جدید:', newProduct);
-    
     db.products.push(newProduct);
     writeDB(db);
     res.status(201).json({
       ...newProduct,
-      imageUrl: newProduct.imagePath ? `http://localhost:${PORT}${newProduct.imagePath}` : null
+      imageUrl: newProduct.imagePath ? `https://${req.get('host')}${newProduct.imagePath}` : null
     });
   } catch (error) {
     console.error('Error in POST /api/products:', error);
@@ -263,7 +237,7 @@ app.put('/api/products/:id', upload.single('imageFile'), (req, res) => {
     writeDB(db);
     res.json({
       ...db.products[index],
-      imageUrl: db.products[index].imagePath ? `http://localhost:${PORT}${db.products[index].imagePath}` : null
+      imageUrl: db.products[index].imagePath ? `https://${req.get('host')}${db.products[index].imagePath}` : null
     });
   } catch (error) {
     console.error('Error in PUT /api/products/:id:', error);
@@ -389,7 +363,7 @@ app.get('/api/banners', (req, res) => {
     const db = readDB();
     const banners = (db.banners || []).map(b => ({
       ...b,
-      imageUrl: b.image ? `http://localhost:${PORT}${b.image}` : null
+      imageUrl: b.image ? `https://${req.get('host')}${b.image}` : null
     }));
     res.json(banners);
   } catch (error) {
@@ -417,7 +391,7 @@ app.post('/api/banners', upload.single('image'), (req, res) => {
     writeDB(db);
     res.status(201).json({
       ...newBanner,
-      imageUrl: newBanner.image ? `http://localhost:${PORT}${newBanner.image}` : null
+      imageUrl: newBanner.image ? `https://${req.get('host')}${newBanner.image}` : null
     });
   } catch (error) {
     console.error('Error in POST /api/banners:', error);
@@ -469,43 +443,32 @@ app.put('/api/banners/order', (req, res) => {
 // ===== API SEARCH (تکمیل خودکار) =====
 // ============================================
 
-// دریافت پیشنهادات برای تکمیل خودکار
 app.get('/api/search/suggestions', (req, res) => {
   try {
     const query = req.query.q || '';
     const db = readDB();
     const products = db.products || [];
     
-    console.log(`🔍 دریافت درخواست جستجو: "${query}"`);
-    console.log(`📦 تعداد کل محصولات: ${products.length}`);
-    
     if (query.length < 1) {
-      console.log('❌ جستجو خالی است');
       return res.json({ suggestions: [] });
     }
     
     const searchLower = query.toLowerCase();
     
-    // ===== جستجو در محصولات =====
     const productSuggestions = products
       .filter(p => p.name && p.name.toLowerCase().includes(searchLower))
-      .map(p => {
-        console.log(`✅ محصول پیدا شد: ${p.name}`);
-        return {
-          type: 'product',
-          label: p.name,
-          value: p.name,
-          image: p.imageUrl || p.image || '🍎',
-          shopName: p.shopName || 'فروشگاه ماناو'
-        };
-      });
+      .map(p => ({
+        type: 'product',
+        label: p.name,
+        value: p.name,
+        image: p.imageUrl || p.image || '🍎',
+        shopName: p.shopName || 'فروشگاه ماناو'
+      }));
     
-    // ===== جستجو در فروشگاه‌ها =====
     const shopMap = new Map();
     products.forEach(p => {
       if (p.shopName && p.shopName.toLowerCase().includes(searchLower)) {
         if (!shopMap.has(p.shopName)) {
-          console.log(`✅ فروشگاه پیدا شد: ${p.shopName}`);
           shopMap.set(p.shopName, {
             type: 'shop',
             label: p.shopName,
@@ -517,10 +480,8 @@ app.get('/api/search/suggestions', (req, res) => {
     });
     const shopSuggestions = Array.from(shopMap.values());
     
-    // ===== ترکیب نتایج =====
     const suggestions = [...productSuggestions, ...shopSuggestions];
     
-    // ===== مرتب‌سازی: موارد دقیق‌تر اول =====
     suggestions.sort((a, b) => {
       const aExact = a.label.toLowerCase().startsWith(searchLower);
       const bExact = b.label.toLowerCase().startsWith(searchLower);
@@ -528,8 +489,6 @@ app.get('/api/search/suggestions', (req, res) => {
       if (!aExact && bExact) return 1;
       return a.label.localeCompare(b.label);
     });
-    
-    console.log(`📊 تعداد نتایج: ${suggestions.length}`);
     
     res.json({ suggestions: suggestions.slice(0, 10) });
   } catch (error) {
